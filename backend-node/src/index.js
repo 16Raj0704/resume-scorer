@@ -33,7 +33,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
     const allowed = [
       process.env.FRONTEND_URL,
-      'https://resume-scorer-frontend-f4k8.onrender.com',
+      'https://resume-scorer-frontend-url.onrender.com/',
       'http://localhost:4000',
       'http://localhost:3000',
     ].filter(Boolean);
