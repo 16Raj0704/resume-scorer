@@ -28,15 +28,28 @@ const logger = createLogger({
 });
 
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL,
-    'https://resume-scorer-frontend-f4k8.onrender.com',
-    'http://localhost:4000',
-  ],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    const allowed = [
+      process.env.FRONTEND_URL,
+      'https://resume-scorer-frontend-f4k8.onrender.com',
+      'http://localhost:4000',
+      'http://localhost:3000',
+    ].filter(Boolean);
+    if (allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(null, true); // temporarily allow all for debugging
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+app.options('*', cors());
 
 // Handle preflight requests
 app.options('*', cors());
