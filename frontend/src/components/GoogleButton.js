@@ -3,6 +3,7 @@ import React from 'react';
 export default function GoogleButton({ text = 'continue_with' }) {
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
   const redirectUri = `${window.location.origin}/auth/google/callback`;
+  console.log('Redirect URI being sent to Google:', redirectUri);
 
   const handleGoogleClick = () => {
     if (!clientId || clientId === 'your_google_client_id_here') {
