@@ -65,6 +65,39 @@ app.use(rateLimiter);
 // ─── Health check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
+
+
+
+app.get('/test-email', async (req, res) => {
+  const nodemailer = require('nodemailer');
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
+    await transporter.verify();
+    res.json({ 
+      success: true, 
+      email: process.env.EMAIL_USER,
+      passLength: process.env.EMAIL_PASS?.length 
+    });
+  } catch (err) {
+    res.json({ 
+      success: false, 
+      error: err.message,
+      email: process.env.EMAIL_USER,
+      passLength: process.env.EMAIL_PASS?.length
+    });
+  }
+});
+
+
+
+
+
 // ─── Public routes ────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 
