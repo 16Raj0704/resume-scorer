@@ -11,11 +11,14 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-key';
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET);
 
-// ─── Email transporter ────────────────────────────────────────────────────────
+// ─── Email transporter (Brevo SMTP) ──────────────────────────────────────────
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
@@ -66,9 +69,8 @@ router.post('/send-otp', async (req, res) => {
 
     res.json({ message: 'OTP sent! Check your inbox.', email });
   } catch (err) {
-    console.error('Send OTP error:', err);
-    if (err.code === 'EAUTH') return res.status(500).json({ error: 'Email service not configured. Check EMAIL_USER and EMAIL_PASS.' });
-    res.status(500).json({ error: 'Failed to send OTP. Try again.' });
+    console.error('Send OTP error:', err.message);
+    res.status(500).json({ error: 'Failed to send OTP: ' + err.message });
   }
 });
 
@@ -93,7 +95,7 @@ router.post('/verify-otp', async (req, res) => {
     const token = generateToken(user.id);
     res.status(201).json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
-    console.error('Verify OTP error:', err);
+    console.error('Verify OTP error:', err.message);
     res.status(500).json({ error: 'Verification failed. Try again.' });
   }
 });
@@ -112,21 +114,29 @@ router.post('/resend-otp', async (req, res) => {
     await sendOTPEmail(email, newOtp, pending.name);
     res.json({ message: 'New OTP sent!' });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to resend OTP' });
+    res.status(500).json({ error: 'Failed to resend OTP: ' + err.message });
   }
 });
 
-// ─── GOOGLE OAUTH — code exchange (redirect flow) ─────────────────────────────
+// ─── GOOGLE OAUTH callback ────────────────────────────────────────────────────
 router.post('/google/callback', async (req, res) => {
   const { code, redirectUri } = req.body;
+  console.log('Google callback received:', { code: code ? 'present' : 'missing', redirectUri });
+
   if (!code) return res.status(400).json({ error: 'Authorization code required' });
+  if (!GOOGLE_CLIENT_ID) return res.status(500).json({ error: 'Google Client ID not configured on server' });
+  if (!GOOGLE_CLIENT_SECRET) return res.status(500).json({ error: 'Google Client Secret not configured on server' });
 
   try {
+    console.log('Exchanging code with redirectUri:', redirectUri);
+
     // Exchange code for tokens
     const { tokens } = await googleClient.getToken({
       code,
       redirect_uri: redirectUri,
     });
+
+    console.log('Tokens received, verifying ID token...');
 
     // Verify the ID token
     const ticket = await googleClient.verifyIdToken({
@@ -136,6 +146,7 @@ router.post('/google/callback', async (req, res) => {
 
     const payload = ticket.getPayload();
     const { email, name, sub: googleId, picture } = payload;
+    console.log('Google user:', email);
 
     // Upsert user
     let result = await pool.query('SELECT id, email, name FROM users WHERE email = $1', [email]);
@@ -145,16 +156,19 @@ router.post('/google/callback', async (req, res) => {
         'INSERT INTO users (email, name, google_id, avatar_url, email_verified) VALUES ($1, $2, $3, $4, true) RETURNING id, email, name',
         [email, name, googleId, picture]
       );
+      console.log('New user created:', email);
     } else {
       await pool.query('UPDATE users SET google_id = $1, avatar_url = $2 WHERE email = $3', [googleId, picture, email]);
+      console.log('Existing user logged in:', email);
     }
 
     const user = result.rows[0];
     const token = generateToken(user.id);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name, avatar: picture } });
   } catch (err) {
-    console.error('Google callback error:', err);
-    res.status(401).json({ error: 'Google authentication failed. Try again.' });
+    console.error('Google callback error:', err.message);
+    console.error('Full error:', err);
+    res.status(401).json({ error: 'Google authentication failed: ' + err.message });
   }
 });
 
@@ -176,6 +190,7 @@ router.post('/login', async (req, res) => {
     const token = generateToken(user.id);
     res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
   } catch (err) {
+    console.error('Login error:', err.message);
     res.status(500).json({ error: 'Login failed' });
   }
 });
